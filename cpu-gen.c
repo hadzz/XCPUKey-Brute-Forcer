@@ -130,21 +130,21 @@ void* brute_thread(void* buf) {
 			}
 			
 			kp[7] = (unsigned char)((key_buf[0] & 0xFF));
-			kp[6] = (unsigned char)((key_buf[0] & 0x00FF) << 8);
-			kp[5] = (unsigned char)((key_buf[0] & 0x0000FF) << 16);
-			kp[4] = (unsigned char)((key_buf[0] & 0x000000FF) << 24);
-			kp[3] = (unsigned char)((key_buf[0] & 0x00000000FF) << 32);
-			kp[2] = (unsigned char)((key_buf[0] & 0x0000000000FF) << 40);
-			kp[1] = (unsigned char)((key_buf[0] & 0x000000000000FF) << 48);
-			kp[0] = (unsigned char)((key_buf[0] & 0x00000000000000FF) << 56);
+			kp[6] = (unsigned char)((key_buf[0] & 0xFF00) >> 8);
+			kp[5] = (unsigned char)((key_buf[0] & 0xFF0000) >> 16);
+			kp[4] = (unsigned char)((key_buf[0] & 0xFF000000) >> 24);
+			kp[3] = (unsigned char)((key_buf[0] & 0xFF00000000) >> 32);
+			kp[2] = (unsigned char)((key_buf[0] & 0xFF0000000000) >> 40);
+			kp[1] = (unsigned char)((key_buf[0] & 0xFF000000000000) >> 48);
+			kp[0] = (unsigned char)((key_buf[0] & 0xFF00000000000000) >> 56);
 			kp[15] = (unsigned char)((key_buf[1] & 0xFF));
-			kp[14] = (unsigned char)((key_buf[1] & 0x00FF) << 8);
-			kp[13] = (unsigned char)((key_buf[1] & 0x0000FF) << 16);
-			kp[12] = (unsigned char)((key_buf[1] & 0x000000FF) << 24);
-			kp[11] = (unsigned char)((key_buf[1] & 0x00000000FF) << 32);
-			kp[10] = (unsigned char)((key_buf[1] & 0x0000000000FF) << 40);
-			kp[9] = (unsigned char)((key_buf[1] & 0x000000000000FF) << 48);
-			kp[8] = (unsigned char)((key_buf[1] & 0x00000000000000FF) << 56);
+			kp[14] = (unsigned char)((key_buf[1] & 0xFF00) >> 8);
+			kp[13] = (unsigned char)((key_buf[1] & 0xFF0000) >> 16);
+			kp[12] = (unsigned char)((key_buf[1] & 0xFF000000) >> 24);
+			kp[11] = (unsigned char)((key_buf[1] & 0xFF00000000) >> 32);
+			kp[10] = (unsigned char)((key_buf[1] & 0xFF0000000000) >> 40);
+			kp[9] = (unsigned char)((key_buf[1] & 0xFF000000000000) >> 48);
+			kp[8] = (unsigned char)((key_buf[1] & 0xFF00000000000000) >> 56);
 		}
         
         total_hashes++;
