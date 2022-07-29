@@ -1,4 +1,4 @@
-/* hmac-sha1.h */
+/* config.h */
 /*
     This file is part of the AVR-Crypto-Lib.
     Copyright (C) 2008  Daniel Otte (daniel.otte@rub.de)
@@ -16,26 +16,31 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
-#ifndef HMACSHA1_H_
-#define HMACSHA1_H_
+#ifndef __CONFIG_H__
+#define __CONFIG_H__
+#include <avr/io.h>
+//#define F_CPU 20000000
+// #define F_CPU 16000000         /* oscillator-frequency in Hz */
+// #define F_CPU 14745600
 
-#include "sha1.h"
+#define DEBUG_METHOD uart
 
-#define HMAC_SHA1_BITS        SHA1_HASH_BITS
-#define HMAC_SHA1_BYTES       SHA1_HASH_BYTES
-#define HMAC_SHA1_BLOCK_BITS  SHA1_BLOCK_BITS
-#define HMAC_SHA1_BLOCK_BYTES SHA1_BLOCK_BYTES
+#include "uart_defs.h"
 
-typedef struct{
-	 sha1_ctx_t a, b;
-} hmac_sha1_ctx_t;
+#define UART0_I 1
+#ifndef UART0_BAUD_RATE
+#define UART0_BAUD_RATE  115200
+#endif
+#define UART0_PARATY     UART_PARATY_NONE
+#define UART0_STOPBITS   UART_STOPBITS_1
+#define UART0_DATABITS   UART_DATABITS_8
+#define UART0_RXBUFFER_SIZE 255
+#define UART0_TXBUFFER_SIZE 120
+#define UART0_SWFLOWCTRL     1
+#define UART0_THRESH_LOW     0
+#define UART0_THRESH_HIGH   32
 
+#define CLI_AUTO_HELP
 
-void hmac_sha1_init(hmac_sha1_ctx_t *s, const void *key, uint16_t keylength_b);
-void hmac_sha1_nextBlock(hmac_sha1_ctx_t *s, const void *block);
-void hmac_sha1_lastBlock(hmac_sha1_ctx_t *s, const void *block, uint16_t length_b);
-void hmac_sha1_final(void *dest, hmac_sha1_ctx_t *s);
+#endif
 
-void hmac_sha1(void *dest, const void *key, uint16_t keylength_b, const void *msg, uint32_t msglength_b);
-
-#endif /*HMACSHA1_H_*/

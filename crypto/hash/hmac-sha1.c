@@ -1,195 +1,130 @@
+/* hmac-sha1.c */
 /*
- * hmac_sha1.c
- *
- * Version 1.0.0
- *
- * Written by Aaron D. Gifford <me@aarongifford.com>
- *
- * Copyright 1998, 2000 Aaron D. Gifford.  All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the copyright holder nor the names of contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
+    This file is part of the AVR-Crypto-Lib.
+    Copyright (C) 2008  Daniel Otte (daniel.otte@rub.de)
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*/
+/**
  * 
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR(S) AND CONTRIBUTORS ``AS IS'' AND
- * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR(S) OR CONTRIBUTORS BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
- * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
- * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
- * SUCH DAMAGE.
+ * implementation of HMAC as described in RFC2104
+ * Author:      Daniel Otte
+ * email:       daniel.otte@rub.de
+ * License:     GPLv3 or later
+ **/
+
+/* 
+ * hmac = hash ( k^opad , hash( k^ipad  , msg))
  */
+
+#include <stdint.h>
+#include <string.h>
+#include "sha1.h"
+#include "hmac-sha1.h"
+
+#define IPAD 0x36
+#define OPAD 0x5C
+
+
+#ifndef HMAC_SHORTONLY
+
+void hmac_sha1_init(hmac_sha1_ctx_t *s, const void *key, uint16_t keylength_b){
+	uint8_t buffer[SHA1_BLOCK_BYTES];
+	uint8_t i;
+	
+	memset(buffer, 0, SHA1_BLOCK_BYTES);
+	if (keylength_b > SHA1_BLOCK_BITS){
+		sha1((void*)buffer, key, keylength_b);
+	} else {
+		memcpy(buffer, key, (keylength_b+7)/8);
+	}
+	
+	for (i=0; i<SHA1_BLOCK_BYTES; ++i){
+		buffer[i] ^= IPAD;
+	}
+	sha1_init(&(s->a));
+	sha1_nextBlock(&(s->a), buffer);
+	
+	for (i=0; i<SHA1_BLOCK_BYTES; ++i){
+		buffer[i] ^= IPAD^OPAD;
+	}
+	sha1_init(&(s->b));
+	sha1_nextBlock(&(s->b), buffer);
+	
+	
+#if defined SECURE_WIPE_BUFFER
+	memset(buffer, 0, SHA1_BLOCK_BYTES);
+#endif
+}
+
+void hmac_sha1_nextBlock(hmac_sha1_ctx_t *s, const void *block){
+	sha1_nextBlock(&(s->a), block);
+}
+void hmac_sha1_lastBlock(hmac_sha1_ctx_t *s, const void *block, uint16_t length_b){
+	while(length_b>=SHA1_BLOCK_BITS){
+		sha1_nextBlock(&s->a, block);
+		block = (uint8_t*)block + SHA1_BLOCK_BYTES;
+		length_b -= SHA1_BLOCK_BITS;
+	}
+	sha1_lastBlock(&s->a, block, length_b);
+}
+
+void hmac_sha1_final(void *dest, hmac_sha1_ctx_t *s){
+	sha1_ctx2hash(dest, &s->a);
+	sha1_lastBlock(&s->b, dest, SHA1_HASH_BITS);
+	sha1_ctx2hash(dest, &(s->b));
+}
+
+#endif
 
 /*
- * The HMAC-SHA1 has is defined as:
- *
- *     HMAC = SHA1(K XOR opad, SHA1(K XOR ipad, message))
- *
- * "opad" is 64 bytes filled with 0x5c
- * "ipad" is 64 bytes filled with 0x36
- * "K" is the key material
- *
- * If the key material "K" is longer than 64 bytes, then the key material
- * will first be digested (K = SHA1(K)) resulting in a 20-byte hash.
- * If the key material is shorter than 64 bytes, it is padded with zero
- * bytes.
- *
- * This code precomputes "K XOR ipad" and "K XOR opad" since that just makes
- * sense.
- *
- * This code was heavily influenced by Eric A. Young's in how the interface
- * was designed and how this file is formatted.
+ * keylength in bits!
+ * message length in bits!
  */
-
-#include "hmac-sha1.h"
-#include <string.h>
-
-/* Filler bytes: */
-#define IPAD_BYTE	0x36
-#define OPAD_BYTE	0x5c
-#define ZERO_BYTE	0x00
-
-void HMAC_SHA1_Init(HMAC_SHA1_CTX *ctx) {
-	memset(&(ctx->key[0]), ZERO_BYTE, HMAC_SHA1_BLOCK_LENGTH);
-	memset(&(ctx->ipad[0]), IPAD_BYTE, HMAC_SHA1_BLOCK_LENGTH);
-	memset(&(ctx->opad[0]), OPAD_BYTE, HMAC_SHA1_BLOCK_LENGTH);
-	ctx->keylen = 0;
-	ctx->hashkey = 0;
-}
-
-void HMAC_SHA1_UpdateKey(HMAC_SHA1_CTX *ctx, unsigned char *key, unsigned int keylen) {
-
-	/* Do we have anything to work with?  If not, return right away. */
-	if (keylen < 1)
-		return;
-
-	/*
-	 * Is the total key length (current data and any previous data)
-	 * longer than the hash block length?
-	 */
-	if (ctx->hashkey !=0 || (keylen + ctx->keylen) > HMAC_SHA1_BLOCK_LENGTH) {
-		/*
-		 * Looks like the key data exceeds the hash block length,
-		 * so that means we use a hash of the key as the key data
-		 * instead.
-		 */
-		if (ctx->hashkey == 0) {
-			/*
-			 * Ah, we haven't started hashing the key
-			 * data yet, so we must init. the hash
-			 * monster to begin feeding it.
-			 */
-
-			/* Set the hash key flag to true (non-zero) */
-			ctx->hashkey = 1;
-
-			/* Init. the hash beastie... */
-			SHA1_Init(&ctx->shactx);
-
-			/* If there's any previous key data, use it */
-			if (ctx->keylen > 0) {
-				SHA1_Update(&ctx->shactx, &(ctx->key[0]), ctx->keylen);
-			}
-
-			/*
-			 * Reset the key length to the future true
-			 * key length, HMAC_SHA1_DIGEST_LENGTH
-			 */
-			ctx->keylen = HMAC_SHA1_DIGEST_LENGTH;
-		}
-		/* Now feed the latest key data to the has monster */
-		SHA1_Update(&ctx->shactx, key, keylen);
+void hmac_sha1(void *dest, const void *key, uint16_t keylength_b, const void *msg, uint32_t msglength_b){ /* a one-shot*/
+	sha1_ctx_t s;
+	uint8_t i;
+	uint8_t buffer[SHA1_BLOCK_BYTES];
+	
+	memset(buffer, 0, SHA1_BLOCK_BYTES);
+	
+	/* if key is larger than a block we have to hash it*/
+	if (keylength_b > SHA1_BLOCK_BITS){
+		sha1((void*)buffer, key, keylength_b);
 	} else {
-		/*
-		 * Key data length hasn't yet exceeded the hash
-		 * block length (HMAC_SHA1_BLOCK_LENGTH), so theres
-		 * no need to hash the key data (yet).  Copy it
-		 * into the key buffer.
-		 */
-		memcpy(&(ctx->key[ctx->keylen]), key, keylen);
-		ctx->keylen += keylen;
+		memcpy(buffer, key, (keylength_b+7)/8);
 	}
-}
-
-void HMAC_SHA1_EndKey(HMAC_SHA1_CTX *ctx) {
-	unsigned char	*ipad, *opad, *key;
-	int		i;
-
-	/* Did we end up hashing the key? */
-	if (ctx->hashkey) {
-		memset(&(ctx->key[0]), ZERO_BYTE, HMAC_SHA1_BLOCK_LENGTH);
-		/* Yes, so finish up and copy the key data */
-		SHA1_Final(&(ctx->key[0]), &ctx->shactx);
-		/* ctx->keylen was already set correctly */
+	
+	for (i=0; i<SHA1_BLOCK_BYTES; ++i){
+		buffer[i] ^= IPAD;
 	}
-	/* Pad the key if necessary with zero bytes */
-	if ((i = HMAC_SHA1_BLOCK_LENGTH - ctx->keylen) > 0) {
-		memset(&(ctx->key[ctx->keylen]), ZERO_BYTE, i);
+	sha1_init(&s);
+	sha1_nextBlock(&s, buffer);
+	while (msglength_b >= SHA1_BLOCK_BITS){
+		sha1_nextBlock(&s, msg);
+		msg = (uint8_t*)msg + SHA1_BLOCK_BYTES;
+		msglength_b -=  SHA1_BLOCK_BITS;
 	}
-
-	ipad = &(ctx->ipad[0]);
-	opad = &(ctx->opad[0]);
-
-	/* Precompute the respective pads XORed with the key */
-	key = &(ctx->key[0]);
-	for (i = 0; i < ctx->keylen; i++, key++) {
-		/* XOR the key byte with the appropriate pad filler byte */
-		*ipad++ ^= *key;
-		*opad++ ^= *key;
+	sha1_lastBlock(&s, msg, msglength_b);
+	/* since buffer still contains key xor ipad we can do ... */
+	for (i=0; i<SHA1_BLOCK_BYTES; ++i){
+		buffer[i] ^= IPAD ^ OPAD;
 	}
+	sha1_ctx2hash(dest, &s); /* save inner hash temporary to dest */
+	sha1_init(&s);
+	sha1_nextBlock(&s, buffer);
+	sha1_lastBlock(&s, dest, SHA1_HASH_BITS);
+	sha1_ctx2hash(dest, &s);
 }
 
-void HMAC_SHA1_StartMessage(HMAC_SHA1_CTX *ctx) {
-	SHA1_Init(&ctx->shactx);
-	SHA1_Update(&ctx->shactx, &(ctx->ipad[0]), HMAC_SHA1_BLOCK_LENGTH);
-}
-
-void HMAC_SHA1_UpdateMessage(HMAC_SHA1_CTX *ctx, unsigned char *data, unsigned int datalen) {
-	SHA1_Update(&ctx->shactx, data, datalen);
-}
-
-void HMAC_SHA1_EndMessage(unsigned char *out, HMAC_SHA1_CTX *ctx) {
-	unsigned char	buf[HMAC_SHA1_DIGEST_LENGTH];
-	SHA_CTX		*c = &ctx->shactx;
-
-	SHA1_Final(&(buf[0]), c);
-	SHA1_Init(c);
-	SHA1_Update(c, &(ctx->opad[0]), HMAC_SHA1_BLOCK_LENGTH);
-	SHA1_Update(c, buf, HMAC_SHA1_DIGEST_LENGTH);
-	SHA1_Final(out, c);
-}
-
-void HMAC_SHA1_Done(HMAC_SHA1_CTX *ctx) {
-	/* Just to be safe, toast all context data */
-	memset(&(ctx->ipad[0]), ZERO_BYTE, HMAC_SHA1_BLOCK_LENGTH);
-	memset(&(ctx->ipad[0]), ZERO_BYTE, HMAC_SHA1_BLOCK_LENGTH);
-	memset(&(ctx->key[0]), ZERO_BYTE, HMAC_SHA1_BLOCK_LENGTH);
-	ctx->keylen = 0;
-	ctx->hashkey = 0;
-} 
-
-void  HMAC_SHA1_Hash(void *secret, void *data, void *res, int len)
-{
-	unsigned char out[20];
-	HMAC_SHA1_CTX ctx;
-	HMAC_SHA1_Init(&ctx);
-	HMAC_SHA1_UpdateKey(&ctx, (unsigned char *) secret, 0x10);
-	HMAC_SHA1_EndKey(&ctx);
-	HMAC_SHA1_StartMessage(&ctx);
-	HMAC_SHA1_UpdateMessage(&ctx, (unsigned char *) data, len);
-	HMAC_SHA1_EndMessage(out, &ctx);
-	HMAC_SHA1_Done(&ctx);
-	memcpy(res, out, 0x10);
-}

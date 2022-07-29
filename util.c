@@ -26,9 +26,11 @@ char* hex_to_char(const char* hex, int len) {
 /* 
  * HMAC SHA1, Takes a cpu key and hashes the hmac_key, outputs digest.
  */
-unsigned char* HMAC_SHA1(char* cpukey, unsigned char* hmac_key) {
+unsigned char* HMAC_SHA1(unsigned char* cpukey, unsigned char* hmac_key) {
     unsigned char* digest = malloc(16);
     //digest = HMAC(EVP_sha1(), cpukey, 16, hmac_key, 16, NULL, NULL);
-    HMAC_SHA1_Hash(cpukey, hmac_key, digest, 16);
-	return digest;
+    //HMAC_SHA1_Hash(cpukey, hmac_key, digest, 16);
+    hmac_sha1(digest, cpukey, 128, hmac_key, 128);
+    return digest;
+  
 }

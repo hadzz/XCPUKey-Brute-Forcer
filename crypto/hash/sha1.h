@@ -1,65 +1,119 @@
+/* sha1.h */
 /*
- * sha.h
- *
- * Originally taken from the public domain SHA1 implementation
- * written by by Steve Reid <steve@edmweb.com>
+    This file is part of the AVR-Crypto-Lib.
+    Copyright (C) 2008  Daniel Otte (daniel.otte@rub.de)
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*/
+/**
+ * \file	sha1.h
+ * \author	Daniel Otte
+ * \email   daniel.otte@rub.de
+ * \date	2006-10-08
+ * \license GPLv3 or later
+ * \brief   SHA-1 declaration.
+ * \ingroup SHA-1
  * 
- * Modified by Aaron D. Gifford <agifford@infowest.com>
- *
- * NO COPYRIGHT - THIS IS 100% IN THE PUBLIC DOMAIN
- *
- * The original unmodified version is available at:
- *    ftp://ftp.funet.fi/pub/crypt/hash/sha/sha1.c
- *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR(S) AND CONTRIBUTORS ``AS IS'' AND
- * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR(S) OR CONTRIBUTORS BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
- * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
- * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
- * SUCH DAMAGE.
+ */
+ 
+#ifndef SHA1_H_
+#define SHA1_H_
+
+#include <stdint.h>
+/** \def SHA1_HASH_BITS
+ * definees the size of a SHA-1 hash in bits 
  */
 
-#ifndef __SHA1_H__
-#define __SHA1_H__
+/** \def SHA1_HASH_BYTES
+ * definees the size of a SHA-1 hash in bytes 
+ */
 
-/* Define this if your machine is LITTLE_ENDIAN, otherwise #undef it: */
-#undef LITTLE_ENDIAN
+/** \def SHA1_BLOCK_BITS
+ * definees the size of a SHA-1 input block in bits 
+ */
 
-/* Make sure you define these types for your architecture: */
-typedef unsigned int sha1_quadbyte;	/* 4 byte type */
-typedef unsigned char sha1_byte;	/* single byte type */
+/** \def SHA1_BLOCK_BYTES
+ * definees the size of a SHA-1 input block in bytes 
+ */
+#define SHA1_HASH_BITS  160
+#define SHA1_HASH_BYTES (SHA1_HASH_BITS/8)
+#define SHA1_BLOCK_BITS 512
+#define SHA1_BLOCK_BYTES (SHA1_BLOCK_BITS/8)
 
+/** \typedef sha1_ctx_t
+ * \brief SHA-1 context type
+ * 
+ * A vatiable of this type may hold the state of a SHA-1 hashing process
+ */
+typedef struct {
+	uint32_t h[5];
+	uint64_t length;
+} sha1_ctx_t;
+
+/** \typedef sha1_hash_t
+ * \brief hash value type
+ * A variable of this type may hold a SHA-1 hash value 
+ */
 /*
- * Be sure to get the above definitions right.  For instance, on my
- * x86 based FreeBSD box, I define LITTLE_ENDIAN and use the type
- * "unsigned long" for the quadbyte.  On FreeBSD on the Alpha, however,
- * while I still use LITTLE_ENDIAN, I must define the quadbyte type
- * as "unsigned int" instead.
+typedef uint8_t sha1_hash_t[SHA1_HASH_BITS/8];
+*/
+
+/** \fn sha1_init(sha1_ctx_t *state)
+ * \brief initializes a SHA-1 context
+ * This function sets a ::sha1_ctx_t variable to the initialization vector
+ * for SHA-1 hashing.
+ * \param state pointer to the SHA-1 context variable
  */
+void sha1_init(sha1_ctx_t *state);
 
-#define SHA1_BLOCK_LENGTH	64
-#define SHA1_DIGEST_LENGTH	20
+/** \fn sha1_nextBlock(sha1_ctx_t *state, const void *block)
+ *  \brief process one input block
+ * This function processes one input block and updates the hash context 
+ * accordingly
+ * \param state pointer to the state variable to update
+ * \param block pointer to the message block to process
+ */
+void sha1_nextBlock (sha1_ctx_t *state, const void *block);
 
-/* The SHA1 structure: */
-typedef struct _SHA_CTX {
-	sha1_quadbyte	state[5];
-	sha1_quadbyte	count[2];
-	sha1_byte	buffer[SHA1_BLOCK_LENGTH];
-} SHA_CTX;
+/** \fn sha1_lastBlock(sha1_ctx_t *state, const void *block, uint16_t length_b)
+ * \brief processes the given block and finalizes the context
+ * This function processes the last block in a SHA-1 hashing process.
+ * The block should have a maximum length of a single input block.
+ * \param state pointer to the state variable to update and finalize
+ * \param block pointer to themessage block to process
+ * \param length_b length of the message block in bits  
+ */
+void sha1_lastBlock (sha1_ctx_t *state, const void *block, uint16_t length_b);
 
-#ifndef NOPROTO
-extern void SHA1_Init(SHA_CTX *context);
-extern void SHA1_Update(SHA_CTX *context, sha1_byte *data, unsigned int len);
-extern void SHA1_Final(sha1_byte digest[SHA1_DIGEST_LENGTH], SHA_CTX* context);
-#else
-extern void SHA1_Init();
-extern void SHA1_Update();
-extern void SHA1_Final();
-#endif
+/** \fn sha1_ctx2hash(sha1_hash_t *dest, sha1_ctx_t *state)
+ * \brief convert a state variable into an actual hash value
+ * Writes the hash value corresponding to the state to the memory pointed by dest.
+ * \param dest pointer to the hash value destination
+ * \param state pointer to the hash context
+ */ 
+void sha1_ctx2hash (void *dest, sha1_ctx_t *state);
 
-#endif
+/** \fn sha1(sha1_hash_t *dest, const void *msg, uint32_t length_b)
+ * \brief hashing a message which in located entirely in RAM
+ * This function automatically hashes a message which is entirely in RAM with
+ * the SHA-1 hashing algorithm.
+ * \param dest pointer to the hash value destination
+ * \param msg  pointer to the message which should be hashed
+ * \param length_b length of the message in bits
+ */ 
+void sha1(void *dest, const void *msg, uint32_t length_b);
+
+
+
+#endif /*SHA1_H_*/

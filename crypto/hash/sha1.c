@@ -1,155 +1,241 @@
+/* sha1.c */
 /*
- * sha1.c
+    This file is part of the AVR-Crypto-Lib.
+    Copyright (C) 2008, 2009  Daniel Otte (daniel.otte@rub.de)
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*/
+/**
+ * \file	sha1.c
+ * \author	Daniel Otte
+ * \date	2006-10-08
+ * \license GPLv3 or later
+ * \brief SHA-1 implementation.
  *
- * Originally witten by Steve Reid <steve@edmweb.com>
- *
- * Modified by Aaron D. Gifford <agifford@infowest.com>
- *
- * NO COPYRIGHT - THIS IS 100% IN THE PUBLIC DOMAIN
- *
- * The original unmodified version is available at:
- *    ftp://ftp.funet.fi/pub/crypt/hash/sha/sha1.c
- *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR(S) AND CONTRIBUTORS ``AS IS'' AND
- * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR(S) OR CONTRIBUTORS BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
- * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
- * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
- * SUCH DAMAGE.
  */
-//#include <stdlib.h>
-#include <string.h>
+
+#include <string.h> /* memcpy & co */
+#include <stdint.h>
+#include "debug.h"
 #include "sha1.h"
 
-#define rol(value, bits) (((value) << (bits)) | ((value) >> (32 - (bits))))
-
-/* blk0() and blk() perform the initial expand. */
-/* I got the idea of expanding during the round function from SSLeay */
-
-#ifdef LITTLE_ENDIAN
-#define blk0(i) (block->l[i] = (rol(block->l[i],24)&(sha1_quadbyte)0xFF00FF00) | (rol(block->l[i],8)&(sha1_quadbyte)0x00FF00FF))
-#else
-#define blk0(i) block->l[i]
+#ifdef DEBUG
+#  undef DEBUG
 #endif
 
-#define blk(i) (block->l[i&15] = rol(block->l[(i+13)&15]^block->l[(i+8)&15] \
-	^block->l[(i+2)&15]^block->l[i&15],1))
 
-/* (R0+R1), R2, R3, R4 are the different operations used in SHA1 */
-#define R0(v,w,x,y,z,i) z+=((w&(x^y))^y)+blk0(i)+0x5A827999+rol(v,5);w=rol(w,30);
-#define R1(v,w,x,y,z,i) z+=((w&(x^y))^y)+blk(i)+0x5A827999+rol(v,5);w=rol(w,30);
-#define R2(v,w,x,y,z,i) z+=(w^x^y)+blk(i)+0x6ED9EBA1+rol(v,5);w=rol(w,30);
-#define R3(v,w,x,y,z,i) z+=(((w|x)&y)|(w&x))+blk(i)+0x8F1BBCDC+rol(v,5);w=rol(w,30);
-#define R4(v,w,x,y,z,i) z+=(w^x^y)+blk(i)+0xCA62C1D6+rol(v,5);w=rol(w,30);
+#define LITTLE_ENDIAN
 
-typedef union _BYTE64QUAD16 {
-	sha1_byte c[64];
-	sha1_quadbyte l[16];
-} BYTE64QUAD16;
+/********************************************************************************************************/
 
-/* Hash a single 512-bit block. This is the core of the algorithm. */
-void SHA1_Transform(sha1_quadbyte state[5], sha1_byte buffer[64]) {
-	sha1_quadbyte	a, b, c, d, e;
-	BYTE64QUAD16	*block;
+/**
+ * \brief initialises given SHA-1 context
+ *
+ */
+void sha1_init(sha1_ctx_t *state){
+	DEBUG_S("\r\nSHA1_INIT");
+	state->h[0] = 0x67452301;
+	state->h[1] = 0xefcdab89;
+	state->h[2] = 0x98badcfe;
+	state->h[3] = 0x10325476;
+	state->h[4] = 0xc3d2e1f0;
+	state->length = 0;
+}
 
-	block = (BYTE64QUAD16*)buffer;
-	/* Copy context->state[] to working vars */
-	a = state[0];
-	b = state[1];
-	c = state[2];
-	d = state[3];
-	e = state[4];
-	/* 4 rounds of 20 operations each. Loop unrolled. */
-	R0(a,b,c,d,e, 0); R0(e,a,b,c,d, 1); R0(d,e,a,b,c, 2); R0(c,d,e,a,b, 3);
-	R0(b,c,d,e,a, 4); R0(a,b,c,d,e, 5); R0(e,a,b,c,d, 6); R0(d,e,a,b,c, 7);
-	R0(c,d,e,a,b, 8); R0(b,c,d,e,a, 9); R0(a,b,c,d,e,10); R0(e,a,b,c,d,11);
-	R0(d,e,a,b,c,12); R0(c,d,e,a,b,13); R0(b,c,d,e,a,14); R0(a,b,c,d,e,15);
-	R1(e,a,b,c,d,16); R1(d,e,a,b,c,17); R1(c,d,e,a,b,18); R1(b,c,d,e,a,19);
-	R2(a,b,c,d,e,20); R2(e,a,b,c,d,21); R2(d,e,a,b,c,22); R2(c,d,e,a,b,23);
-	R2(b,c,d,e,a,24); R2(a,b,c,d,e,25); R2(e,a,b,c,d,26); R2(d,e,a,b,c,27);
-	R2(c,d,e,a,b,28); R2(b,c,d,e,a,29); R2(a,b,c,d,e,30); R2(e,a,b,c,d,31);
-	R2(d,e,a,b,c,32); R2(c,d,e,a,b,33); R2(b,c,d,e,a,34); R2(a,b,c,d,e,35);
-	R2(e,a,b,c,d,36); R2(d,e,a,b,c,37); R2(c,d,e,a,b,38); R2(b,c,d,e,a,39);
-	R3(a,b,c,d,e,40); R3(e,a,b,c,d,41); R3(d,e,a,b,c,42); R3(c,d,e,a,b,43);
-	R3(b,c,d,e,a,44); R3(a,b,c,d,e,45); R3(e,a,b,c,d,46); R3(d,e,a,b,c,47);
-	R3(c,d,e,a,b,48); R3(b,c,d,e,a,49); R3(a,b,c,d,e,50); R3(e,a,b,c,d,51);
-	R3(d,e,a,b,c,52); R3(c,d,e,a,b,53); R3(b,c,d,e,a,54); R3(a,b,c,d,e,55);
-	R3(e,a,b,c,d,56); R3(d,e,a,b,c,57); R3(c,d,e,a,b,58); R3(b,c,d,e,a,59);
-	R4(a,b,c,d,e,60); R4(e,a,b,c,d,61); R4(d,e,a,b,c,62); R4(c,d,e,a,b,63);
-	R4(b,c,d,e,a,64); R4(a,b,c,d,e,65); R4(e,a,b,c,d,66); R4(d,e,a,b,c,67);
-	R4(c,d,e,a,b,68); R4(b,c,d,e,a,69); R4(a,b,c,d,e,70); R4(e,a,b,c,d,71);
-	R4(d,e,a,b,c,72); R4(c,d,e,a,b,73); R4(b,c,d,e,a,74); R4(a,b,c,d,e,75);
-	R4(e,a,b,c,d,76); R4(d,e,a,b,c,77); R4(c,d,e,a,b,78); R4(b,c,d,e,a,79);
-	/* Add the working vars back into context.state[] */
-	state[0] += a;
-	state[1] += b;
-	state[2] += c;
-	state[3] += d;
-	state[4] += e;
-	/* Wipe variables */
-	a = b = c = d = e = 0;
+/********************************************************************************************************/
+/* some helping functions */
+uint32_t rotl32(uint32_t n, uint8_t bits){
+	return ((n<<bits) | (n>>(32-bits)));
+}
+
+uint32_t change_endian32(uint32_t x){
+	return (((x)<<24) | ((x)>>24) | (((x)& 0x0000ff00)<<8) | (((x)& 0x00ff0000)>>8));
 }
 
 
-/* SHA1_Init - Initialize new context */
-void SHA1_Init(SHA_CTX* context) {
-	/* SHA1 initialization constants */
-	context->state[0] = 0x67452301;
-	context->state[1] = 0xEFCDAB89;
-	context->state[2] = 0x98BADCFE;
-	context->state[3] = 0x10325476;
-	context->state[4] = 0xC3D2E1F0;
-	context->count[0] = context->count[1] = 0;
+/* three SHA-1 inner functions */
+uint32_t ch(uint32_t x, uint32_t y, uint32_t z){
+	DEBUG_S("\r\nCH");
+	return ((x&y)^((~x)&z));
 }
 
-/* Run your data through this. */
-void SHA1_Update(SHA_CTX *context, sha1_byte *data, unsigned int len) {
-	unsigned int	i, j;
+uint32_t maj(uint32_t x, uint32_t y, uint32_t z){
+	DEBUG_S("\r\nMAJ");
+	return ((x&y)^(x&z)^(y&z));
+}
 
-	j = (context->count[0] >> 3) & 63;
-	if ((context->count[0] += len << 3) < (len << 3)) context->count[1]++;
-	context->count[1] += (len >> 29);
-	if ((j + len) > 63) {
-	    memcpy(&context->buffer[j], data, (i = 64-j));
-	    SHA1_Transform(context->state, context->buffer);
-	    for ( ; i + 63 < len; i += 64) {
-	        SHA1_Transform(context->state, &data[i]);
-	    }
-	    j = 0;
+uint32_t parity(uint32_t x, uint32_t y, uint32_t z){
+	DEBUG_S("\r\nPARITY");
+	return ((x^y)^z);
+}
+
+/********************************************************************************************************/
+/**
+ * \brief "add" a block to the hash
+ * This is the core function of the hash algorithm. To understand how it's working
+ * and what thoese variables do, take a look at FIPS-182. This is an "alternativ" implementation
+ */
+
+#define MASK 0x0000000f
+
+typedef uint32_t (*pf_t)(uint32_t x, uint32_t y, uint32_t z);
+
+void sha1_nextBlock (sha1_ctx_t *state, const void *block){
+	uint32_t a[5];
+	uint32_t w[16];
+	uint32_t temp;
+	uint8_t t,s,fi, fib;
+	pf_t f[] = {ch,parity,maj,parity};
+	uint32_t k[4]={	0x5a827999,
+					0x6ed9eba1,
+					0x8f1bbcdc,
+					0xca62c1d6};
+
+	/* load the w array (changing the endian and so) */
+	for(t=0; t<16; ++t){
+		w[t] = change_endian32(((uint32_t*)block)[t]);
 	}
-	else i = 0;
-	memcpy(&context->buffer[j], &data[i], len - i);
+
+#if DEBUG
+	uint8_t dbgi;
+	for(dbgi=0; dbgi<16; ++dbgi){
+		/*
+		DEBUG_S("\n\rBlock:");
+		DEBUG_B(dbgi);
+		DEBUG_C(':');
+		*/
+		cli_putstr_P(PSTR("\r\nBlock:"));
+		cli_hexdump(&dbgi, 1);
+		cli_putc(':');
+		cli_hexdump(&(w[dbgi]) ,4);
+	}
+#endif
+
+	/* load the state */
+	memcpy(a, state->h, 5*sizeof(uint32_t));
+
+
+	/* the fun stuff */
+	for(fi=0,fib=0,t=0; t<=79; ++t){
+		s = t & MASK;
+		if(t>=16){
+			#if DEBUG
+			 DEBUG_S("\r\n ws = "); cli_hexdump(&(w[s]), 4);
+			#endif
+			w[s] = rotl32( w[(s+13)&MASK] ^ w[(s+8)&MASK] ^
+				 w[(s+ 2)&MASK] ^ w[s] ,1);
+			#ifdef DEBUG
+			 DEBUG_S(" --> ws = "); cli_hexdump(&(w[s]), 4);
+			#endif
+		}
+
+		uint32_t dtemp;
+		temp = rotl32(a[0],5) + (dtemp=f[fi](a[1],a[2],a[3])) + a[4] + k[fi] + w[s];
+		memmove(&(a[1]), &(a[0]), 4*sizeof(uint32_t)); /* e=d; d=c; c=b; b=a; */
+		a[0] = temp;
+		a[2] = rotl32(a[2],30); /* we might also do rotr32(c,2) */
+		fib++;
+		if(fib==20){
+			fib=0;
+			fi = (fi+1)%4;
+		}
+		#if DEBUG
+		/* debug dump */
+		DEBUG_S("\r\nt = "); DEBUG_B(t);
+		DEBUG_S("; a[]: ");
+		 cli_hexdump(a, 5*4);
+		DEBUG_S("; k = ");
+		 cli_hexdump(&(k[t/20]), 4);
+		DEBUG_S("; f(b,c,d) = ");
+		 cli_hexdump(&dtemp, 4);
+		#endif
+	}
+
+	/* update the state */
+	for(t=0; t<5; ++t){
+		state->h[t] += a[t];
+	}
+	state->length += 512;
+}
+
+/********************************************************************************************************/
+
+void sha1_lastBlock(sha1_ctx_t *state, const void *block, uint16_t length){
+	uint8_t lb[SHA1_BLOCK_BYTES]; /* local block */
+	while(length>=SHA1_BLOCK_BITS){
+		sha1_nextBlock(state, block);
+		length -= SHA1_BLOCK_BITS;
+		block = (uint8_t*)block + SHA1_BLOCK_BYTES;
+	}
+	state->length += length;
+	memset(lb, 0, SHA1_BLOCK_BYTES);
+	memcpy (lb, block, (length+7)>>3);
+
+	/* set the final one bit */
+	lb[length>>3] |= 0x80>>(length & 0x07);
+
+	if (length>512-64-1){ /* not enouth space for 64bit length value */
+		sha1_nextBlock(state, lb);
+		state->length -= 512;
+		memset(lb, 0, SHA1_BLOCK_BYTES);
+	}
+	/* store the 64bit length value */
+#if defined LITTLE_ENDIAN
+	 	/* this is now rolled up */
+	uint8_t i;
+	for (i=0; i<8; ++i){
+		lb[56+i] = ((uint8_t*)&(state->length))[7-i];
+	}
+#elif defined BIG_ENDIAN
+	*((uint64_t)&(lb[56])) = state->length;
+#endif
+	sha1_nextBlock(state, lb);
+}
+
+/********************************************************************************************************/
+
+void sha1_ctx2hash (void *dest, sha1_ctx_t *state){
+#if defined LITTLE_ENDIAN
+	uint8_t i;
+	for(i=0; i<5; ++i){
+		((uint32_t*)dest)[i] = change_endian32(state->h[i]);
+	}
+#elif BIG_ENDIAN
+	if (dest != state->h)
+		memcpy(dest, state->h, SHA1_HASH_BITS/8);
+#else
+# error unsupported endian type!
+#endif
+}
+
+/********************************************************************************************************/
+/**
+ *
+ *
+ */
+void sha1 (void *dest, const void *msg, uint32_t length){
+	sha1_ctx_t s;
+	DEBUG_S("\r\nBLA BLUB");
+	sha1_init(&s);
+	while(length & (~0x0001ff)){ /* length>=512 */
+		DEBUG_S("\r\none block");
+		sha1_nextBlock(&s, msg);
+		msg = (uint8_t*)msg + SHA1_BLOCK_BITS/8; /* increment pointer to next block */
+		length -= SHA1_BLOCK_BITS;
+	}
+	sha1_lastBlock(&s, msg, length);
+	sha1_ctx2hash(dest, &s);
 }
 
 
-/* Add padding and return the message digest. */
-void SHA1_Final(sha1_byte digest[SHA1_DIGEST_LENGTH], SHA_CTX *context) {
-	sha1_quadbyte	i, j;
-	sha1_byte	finalcount[8];
-
-	for (i = 0; i < 8; i++) {
-	    finalcount[i] = (sha1_byte)((context->count[(i >= 4 ? 0 : 1)]
-	     >> ((3-(i & 3)) * 8) ) & 255);  /* Endian independent */
-	}
-	SHA1_Update(context, (sha1_byte *)"\200", 1);
-	while ((context->count[0] & 504) != 448) {
-	    SHA1_Update(context, (sha1_byte *)"\0", 1);
-	}
-	/* Should cause a SHA1_Transform() */
-	SHA1_Update(context, finalcount, 8);
-	for (i = 0; i < SHA1_DIGEST_LENGTH; i++) {
-	    digest[i] = (sha1_byte)
-	     ((context->state[i>>2] >> ((3-(i & 3)) * 8) ) & 255);
-	}
-	/* Wipe variables */
-	i = j = 0;
-	memset(context->buffer, 0, SHA1_BLOCK_LENGTH);
-	memset(context->state, 0, SHA1_DIGEST_LENGTH);
-	memset(context->count, 0, 8);
-	memset(&finalcount, 0, 8);
-}

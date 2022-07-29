@@ -1,4 +1,4 @@
-/* hmac-sha1.h */
+/* debug.h */
 /*
     This file is part of the AVR-Crypto-Lib.
     Copyright (C) 2008  Daniel Otte (daniel.otte@rub.de)
@@ -16,26 +16,29 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
-#ifndef HMACSHA1_H_
-#define HMACSHA1_H_
+#ifndef DEBUG_H_
+#define DEBUG_H_
 
-#include "sha1.h"
+#ifdef DEBUG_METHOD
+	#define DEBUG_INIT() debug_init()
+#else
+	#define DEBUG_INIT()
+#endif
 
-#define HMAC_SHA1_BITS        SHA1_HASH_BITS
-#define HMAC_SHA1_BYTES       SHA1_HASH_BYTES
-#define HMAC_SHA1_BLOCK_BITS  SHA1_BLOCK_BITS
-#define HMAC_SHA1_BLOCK_BYTES SHA1_BLOCK_BYTES
+#if DEBUG
+	#define DEBUG_C(_c) debug_char(_c)
+	#define DEBUG_S(_s) debug_str(_s)
+	#define DEBUG_B(_b) debug_byte(_b)
+	#include "cli.h"
+#else
+	#define DEBUG_C(_c)
+	#define DEBUG_S(_s)
+	#define DEBUG_B(_b)
+#endif
 
-typedef struct{
-	 sha1_ctx_t a, b;
-} hmac_sha1_ctx_t;
+void debug_init(void);
+void debug_char(char);
+void debug_str(char*);
+void debug_byte(char);
 
-
-void hmac_sha1_init(hmac_sha1_ctx_t *s, const void *key, uint16_t keylength_b);
-void hmac_sha1_nextBlock(hmac_sha1_ctx_t *s, const void *block);
-void hmac_sha1_lastBlock(hmac_sha1_ctx_t *s, const void *block, uint16_t length_b);
-void hmac_sha1_final(void *dest, hmac_sha1_ctx_t *s);
-
-void hmac_sha1(void *dest, const void *key, uint16_t keylength_b, const void *msg, uint32_t msglength_b);
-
-#endif /*HMACSHA1_H_*/
+#endif /*DEBUG_H_*/

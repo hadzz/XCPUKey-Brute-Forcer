@@ -14,6 +14,6 @@
 #ifndef UTIL_H
 #define UTIL_H
 extern char* hex_to_char(const char* hex, int len);
-extern unsigned char* HMAC_SHA1(char* cpukey, unsigned char* hmac_key);
+extern unsigned char* HMAC_SHA1(unsigned char* cpukey, unsigned char* hmac_key);
 #endif /* UTIL_H */
 
