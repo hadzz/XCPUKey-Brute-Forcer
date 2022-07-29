@@ -3,7 +3,7 @@
  * XCPUKey-miner is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
- * any later version. 
+ * any later version.
  *
  * XCPUKey-miner is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -14,7 +14,7 @@
  * along with XCPUKey-miner.  If not, see <http://www.gnu.org/licenses/>
  */
 
-/* 
+/*
  * File:   cpu-gen.c
  * Author: Hect0r
  *
@@ -44,9 +44,9 @@
 #include "crypto/hash/hmac-sha1.h"
 
 // Globals.
-unsigned char * cpu_key, * serial_num;
-uint8_t * kvheader;
-uint8_t * hmac;
+unsigned char *cpu_key, *serial_num;
+uint8_t *kvheader;
+uint8_t *hmac;
 
 int debug = 0, mine = 1;
 uint64_t total_hashes = 0;
@@ -55,28 +55,24 @@ typedef struct ModeOf {
   uint64_t Start;
   uint64_t Max;
   int ThreadNum;
-}
-mode_t;
+} mode_t;
 
 /*
  * Brute Thread. old fashioned brute force the cpukey.
  */
-void * brute_thread(void * buf) {
-  mode_t * tm = buf;
-  printf("#%d Thread Started (Starting Index: %"
-    PRIu64 ", Max Index: %"
-    PRIu64 ", Mode: Increment)...\n", tm -> ThreadNum, tm -> Start, tm -> Max);
+void *brute_thread(void *buf) {
+  mode_t *tm = buf;
+  printf("#%d Thread Started (Starting Index: %" PRIu64 ", Max Index: %" PRIu64
+         ", Mode: Increment)...\n",
+         tm->ThreadNum, tm->Start, tm->Max);
 
-  uint64_t key_buf[2] = {
-    tm -> Start,
-    0
-  };
-  //unsigned char key[16] = { 0xDF, 0xAC, 0x65, 0xE8, 0xB2,
-  //0x52, 0x4E, 0xB8, 0x4A, 0x6B, 0x7D, 0x20, 0x70, 0x35,
-  //0x06, 0x0C }, * kp = key;
-  unsigned char key[16], * kp = key;
-  unsigned char * hmac_buf, * hmac_key;
-  
+  uint64_t key_buf[2] = {tm->Start, 0};
+  // unsigned char key[16] = { 0xDF, 0xAC, 0x65, 0xE8, 0xB2,
+  // 0x52, 0x4E, 0xB8, 0x4A, 0x6B, 0x7D, 0x20, 0x70, 0x35,
+  // 0x06, 0x0C }, * kp = key;
+  unsigned char key[16], *kp = key;
+  unsigned char *hmac_buf, *hmac_key;
+
   kp[7] = (unsigned char)((key_buf[0] & 0xFF));
   kp[6] = (unsigned char)((key_buf[0] & 0xFF00) >> 8);
   kp[5] = (unsigned char)((key_buf[0] & 0xFF0000) >> 16);
@@ -95,10 +91,10 @@ void * brute_thread(void * buf) {
   kp[8] = (unsigned char)((key_buf[1] & 0xFF00000000000000) >> 56);
 
   // Init crypto support.
-  rc4_state_t * rc4 = malloc(sizeof(rc4_state_t));
+  rc4_state_t *rc4 = malloc(sizeof(rc4_state_t));
   // Outputs.
   uint8_t buf2[20];
-  uint8_t * buf4 = malloc(16383);
+  uint8_t *buf4 = malloc(16383);
 
   int kn = 0;
 
@@ -106,14 +102,14 @@ void * brute_thread(void * buf) {
   hmac_buf = malloc(16);
   kn = 0;
   while (kn < 16) {
-    hmac_buf[kn] = (unsigned char) hmac[kn];
+    hmac_buf[kn] = (unsigned char)hmac[kn];
     kn++;
   }
 
   while (mine > 0) {
-    // remove this later  
+    // remove this later
     if (total_hashes % 1000000 == 0) {
-      printf("Thread %d curr key: ", tm -> ThreadNum);
+      printf("Thread %d curr key: ", tm->ThreadNum);
       kn = 0;
       while (kn < 16) {
         printf("%02X", kp[kn]);
@@ -122,34 +118,34 @@ void * brute_thread(void * buf) {
       printf("\n");
     }
     //////////////
-    
+
     // Generate Hmac Key for decryption.
-    hmac_key = HMAC_SHA1((unsigned char * ) kp, (unsigned char * ) hmac_buf);
+    hmac_key = HMAC_SHA1((unsigned char *)kp, (unsigned char *)hmac_buf);
 
     // Convert Hmac to uint8_t.
     kn = 0;
     while (kn < 16) {
-      buf2[kn] = (uint8_t) hmac_key[kn];
+      buf2[kn] = (uint8_t)hmac_key[kn];
       kn++;
     }
 
     // Decrypt kv_header and compare to know serial number.
     rc4_init(rc4, buf2, 16);
-    rc4_crypt(rc4, kvheader, & buf4, 16368);
+    rc4_crypt(rc4, kvheader, &buf4, 16368);
 
     // Compare The serial number.
-    if (buf4[171] == (uint8_t) serial_num[11] &&
-      buf4[170] == (uint8_t) serial_num[10] &&
-      buf4[169] == (uint8_t) serial_num[9] &&
-      buf4[168] == (uint8_t) serial_num[8] &&
-      buf4[167] == (uint8_t) serial_num[7] &&
-      buf4[166] == (uint8_t) serial_num[6] &&
-      buf4[165] == (uint8_t) serial_num[5] &&
-      buf4[164] == (uint8_t) serial_num[4] &&
-      buf4[163] == (uint8_t) serial_num[3] &&
-      buf4[162] == (uint8_t) serial_num[2] &&
-      buf4[161] == (uint8_t) serial_num[1] &&
-      buf4[160] == (uint8_t) serial_num[0]) {
+    if (buf4[171] == (uint8_t)serial_num[11] &&
+        buf4[170] == (uint8_t)serial_num[10] &&
+        buf4[169] == (uint8_t)serial_num[9] &&
+        buf4[168] == (uint8_t)serial_num[8] &&
+        buf4[167] == (uint8_t)serial_num[7] &&
+        buf4[166] == (uint8_t)serial_num[6] &&
+        buf4[165] == (uint8_t)serial_num[5] &&
+        buf4[164] == (uint8_t)serial_num[4] &&
+        buf4[163] == (uint8_t)serial_num[3] &&
+        buf4[162] == (uint8_t)serial_num[2] &&
+        buf4[161] == (uint8_t)serial_num[1] &&
+        buf4[160] == (uint8_t)serial_num[0]) {
       // Found CPU Key.
       printf("Found Key : ");
 
@@ -162,10 +158,12 @@ void * brute_thread(void * buf) {
       mine = 0;
       pthread_exit(NULL);
     } else { // Get a new cpu key for next round.
-      if (key_buf[0] == tm -> Max) {
+      if (key_buf[0] == tm->Max) {
         if (key_buf[1] == UINT64_MAX) {
           mine = 0;
-          printf("Mining Thread #%d is complete, no key found on this thread :(\n", tm -> ThreadNum);
+          printf(
+              "Mining Thread #%d is complete, no key found on this thread :(\n",
+              tm->ThreadNum);
         } else {
           key_buf[0]++;
         }
@@ -200,9 +198,9 @@ void * brute_thread(void * buf) {
 /*
  * Count Processors, taken from vanitygen by samr7.
  */
-#if!defined(_WIN32)
+#if !defined(_WIN32)
 int count_processors(void) {
-  FILE * fp;
+  FILE *fp;
   char buf[512];
   int count = 0;
 
@@ -218,54 +216,57 @@ int count_processors(void) {
   return count;
 }
 #endif
-/* 
+/*
  * Usage.
  */
 void usage() {
-  printf("XCPUKey-Brute-Forcer - 0.1c Beta by Hect0r\n"
-    "Usage : cpu-gen [!keyvault_location] [!serial_number] [thread_count]\n"
-    " NOTE : Each argument with a ! in it, needs to be set, without ! is optional.\n"
-    "[keyvault_location] - The filepath to the ENCRYPTED keyvault.\n"
-    "[serial_number] - Your console serial number, 12 numbers.\n"
-    "[thread_count] - The number of cpu threads to use, default: num of cpu cores.\n");
+  printf(
+      "XCPUKey-Brute-Forcer - 0.1c Beta by Hect0r\n"
+      "Usage : cpu-gen [!keyvault_location] [!serial_number] [thread_count]\n"
+      " NOTE : Each argument with a ! in it, needs to be set, without ! is "
+      "optional.\n"
+      "[keyvault_location] - The filepath to the ENCRYPTED keyvault.\n"
+      "[serial_number] - Your console serial number, 12 numbers.\n"
+      "[thread_count] - The number of cpu threads to use, default: num of cpu "
+      "cores.\n");
 }
 /*
  * Main Entry point.
  */
 /*
  unsigned char* uint64_to_uchar(uint64_t input) {
-	unsigned char *buf = malloc(sizeof(input));
-	memcpy(buf, &input, sizeof(input));
-	return buf;
+        unsigned char *buf = malloc(sizeof(input));
+        memcpy(buf, &input, sizeof(input));
+        return buf;
 }
 uint64_t uchar_to_uint64(unsigned char *input, int start, bool reverse)
 */
-int main(int argc, char ** argv) {
-  
+int main(int argc, char **argv) {
+
   /*
   // testing new HMAC library
-  
+
   unsigned char * hmac_key;
   unsigned char key[16] = { 0xDF, 0xAC, 0x65, 0xE8, 0xB2,
   0x52, 0x4E, 0xB8, 0x4A, 0x6B, 0x7D, 0x20, 0x70, 0x35,
   0x06, 0x0C }, * kp = key;
-  
+
   //DFAC65E8B2524EB84A6B7D207035060C
   unsigned char hmac[16] = { 0x5A, 0xD4, 0xEC, 0x90,
   0x8C, 0xE1, 0x1C, 0xBA, 0x68, 0x50, 0x02, 0xB1,
   0xC3, 0xE4, 0x59, 0xD8 }, * hmac_buf = hmac;
-  
+
   hmac_key = HMAC_SHA1((unsigned char * ) kp, (unsigned char * ) hmac_buf);
-  
+
   printf("HMACK_KEY: ");
   int i;
   for (i = 0; i<16; i++)
     printf("%02X", hmac_key[i]);
   printf("\n");
-  
+
   return 0;
   */
-  
+
   int nthreads = 0, t = 0, rc = 0;
 
   if (argc < 2) {
@@ -275,7 +276,7 @@ int main(int argc, char ** argv) {
 
   printf("XCPUKey-Brute-Forcer - 0.1e Beta by Hect0r\n");
 
-  FILE * kv = fopen(argv[1], "r");
+  FILE *kv = fopen(argv[1], "r");
   if (!kv) {
     printf("Unable to open kv file...\n");
     return 1;
@@ -320,7 +321,7 @@ int main(int argc, char ** argv) {
       printf("Serial Number : ");
     }
     while (t < 12) {
-      serial_num[t] = (unsigned char) argv[2][t];
+      serial_num[t] = (unsigned char)argv[2][t];
       if (debug == 1) {
         printf("%02X", serial_num[t]);
       }
@@ -339,24 +340,23 @@ int main(int argc, char ** argv) {
     if (nthreads < 0 || nthreads == 0 || nthreads > 16) {
       nthreads = count_processors();
     }
-
   }
 
   if (debug == 1) {
     printf("KV Location %s\n"
-      "Num Threads is %d\n",
-      argv[1], nthreads);
+           "Num Threads is %d\n",
+           argv[1], nthreads);
   }
 
   pthread_t threads[nthreads];
 
   // Start Mining Threads.
   for (t = 0; t < nthreads; t++) {
-    mode_t * buf = malloc(sizeof(mode_t));
-    buf -> ThreadNum = t;
-    buf -> Start = ((UINT64_MAX / nthreads) * t);
-    buf -> Max = buf -> Start + (UINT64_MAX / nthreads);
-    rc = pthread_create( & threads[t], NULL, brute_thread, (void * ) buf);
+    mode_t *buf = malloc(sizeof(mode_t));
+    buf->ThreadNum = t;
+    buf->Start = ((UINT64_MAX / nthreads) * t);
+    buf->Max = buf->Start + (UINT64_MAX / nthreads);
+    rc = pthread_create(&threads[t], NULL, brute_thread, (void *)buf);
     if (rc) {
       fprintf(stderr, "ERROR: could not create thread %d\n", t);
       exit(1);
@@ -366,8 +366,8 @@ int main(int argc, char ** argv) {
   struct timeval last_upd;
   struct timeval tv_now;
 
-  gettimeofday( & tv_now, NULL);
-  gettimeofday( & last_upd, NULL);
+  gettimeofday(&tv_now, NULL);
+  gettimeofday(&last_upd, NULL);
 
   int hashes = 0, start = 0;
   while (mine == 1) {
@@ -375,12 +375,11 @@ int main(int argc, char ** argv) {
     sleep(1);
     hashes = total_hashes - start;
     if ((tv_now.tv_sec - last_upd.tv_sec) >= 5) {
-      printf("[ HPS : %d h/ps - Total : %"
-        PRIu64 " ]\n", hashes, total_hashes);
-      gettimeofday( & last_upd, NULL);
+      printf("[ HPS : %d h/ps - Total : %" PRIu64 " ]\n", hashes, total_hashes);
+      gettimeofday(&last_upd, NULL);
     }
 
-    gettimeofday( & tv_now, NULL);
+    gettimeofday(&tv_now, NULL);
   }
   pthread_exit(NULL);
   return (EXIT_SUCCESS);
