@@ -37,7 +37,6 @@
 
 #include <sys/time.h>
 
-#include "util.h"
 
 #include "crypto/enc/rc4.h"
 
@@ -67,11 +66,13 @@ void *brute_thread(void *buf) {
          tm->ThreadNum, tm->Start, tm->Max);
 
   uint64_t key_buf[2] = {tm->Start, 0};
-  // unsigned char key[16] = { 0xDF, 0xAC, 0x65, 0xE8, 0xB2,
-  // 0x52, 0x4E, 0xB8, 0x4A, 0x6B, 0x7D, 0x20, 0x70, 0x35,
-  // 0x06, 0x0C }, * kp = key;
+  //unsigned char key[16] = { 0xDF, 0xAC, 0x65, 0xE8, 0xB2,
+   //0x52, 0x4E, 0xB8, 0x4A, 0x6B, 0x7D, 0x20, 0x70, 0x35,
+   //0x06, 0x0C }, * kp = key;
   unsigned char key[16], *kp = key;
-  unsigned char *hmac_buf, *hmac_key;
+  unsigned char *hmac_buf;
+  unsigned char *hmac_key = malloc(16);
+
 
   kp[7] = (unsigned char)((key_buf[0] & 0xFF));
   kp[6] = (unsigned char)((key_buf[0] & 0xFF00) >> 8);
@@ -94,7 +95,7 @@ void *brute_thread(void *buf) {
   rc4_state_t *rc4 = malloc(sizeof(rc4_state_t));
   // Outputs.
   uint8_t buf2[20];
-  uint8_t *buf4 = malloc(16383);
+  uint8_t *buf4 = malloc(172);
 
   int kn = 0;
 
@@ -107,8 +108,9 @@ void *brute_thread(void *buf) {
   }
 
   while (mine > 0) {
+    //////////////
     // remove this later
-    if (total_hashes % 1000000 == 0) {
+    if (kp[15] == 0 &&  kp[14] == 0 &&  kp[13] == 0) {
       printf("Thread %d curr key: ", tm->ThreadNum);
       kn = 0;
       while (kn < 16) {
@@ -120,7 +122,7 @@ void *brute_thread(void *buf) {
     //////////////
 
     // Generate Hmac Key for decryption.
-    hmac_key = HMAC_SHA1((unsigned char *)kp, (unsigned char *)hmac_buf);
+    hmac_sha1(hmac_key, kp, 128, hmac_buf, 128);
 
     // Convert Hmac to uint8_t.
     kn = 0;
@@ -131,7 +133,7 @@ void *brute_thread(void *buf) {
 
     // Decrypt kv_header and compare to know serial number.
     rc4_init(rc4, buf2, 16);
-    rc4_crypt(rc4, kvheader, &buf4, 16368);
+    rc4_crypt(rc4, kvheader, &buf4, 172);
 
     // Compare The serial number.
     if (buf4[171] == (uint8_t)serial_num[11] &&
@@ -170,25 +172,23 @@ void *brute_thread(void *buf) {
       } else {
         key_buf[1]++;
       }
-
-      kp[7] = (unsigned char)((key_buf[0] & 0xFF));
-      kp[6] = (unsigned char)((key_buf[0] & 0xFF00) >> 8);
-      kp[5] = (unsigned char)((key_buf[0] & 0xFF0000) >> 16);
-      kp[4] = (unsigned char)((key_buf[0] & 0xFF000000) >> 24);
-      kp[3] = (unsigned char)((key_buf[0] & 0xFF00000000) >> 32);
-      kp[2] = (unsigned char)((key_buf[0] & 0xFF0000000000) >> 40);
-      kp[1] = (unsigned char)((key_buf[0] & 0xFF000000000000) >> 48);
-      kp[0] = (unsigned char)((key_buf[0] & 0xFF00000000000000) >> 56);
-      kp[15] = (unsigned char)((key_buf[1] & 0xFF));
-      kp[14] = (unsigned char)((key_buf[1] & 0xFF00) >> 8);
-      kp[13] = (unsigned char)((key_buf[1] & 0xFF0000) >> 16);
-      kp[12] = (unsigned char)((key_buf[1] & 0xFF000000) >> 24);
-      kp[11] = (unsigned char)((key_buf[1] & 0xFF00000000) >> 32);
-      kp[10] = (unsigned char)((key_buf[1] & 0xFF0000000000) >> 40);
-      kp[9] = (unsigned char)((key_buf[1] & 0xFF000000000000) >> 48);
-      kp[8] = (unsigned char)((key_buf[1] & 0xFF00000000000000) >> 56);
     }
-
+    kp[7] = (unsigned char)((key_buf[0] & 0xFF));
+    kp[6] = (unsigned char)((key_buf[0] & 0xFF00) >> 8);
+    kp[5] = (unsigned char)((key_buf[0] & 0xFF0000) >> 16);
+    kp[4] = (unsigned char)((key_buf[0] & 0xFF000000) >> 24);
+    kp[3] = (unsigned char)((key_buf[0] & 0xFF00000000) >> 32);
+    kp[2] = (unsigned char)((key_buf[0] & 0xFF0000000000) >> 40);
+    kp[1] = (unsigned char)((key_buf[0] & 0xFF000000000000) >> 48);
+    kp[0] = (unsigned char)((key_buf[0] & 0xFF00000000000000) >> 56);
+    kp[15] = (unsigned char)((key_buf[1] & 0xFF));
+    kp[14] = (unsigned char)((key_buf[1] & 0xFF00) >> 8);
+    kp[13] = (unsigned char)((key_buf[1] & 0xFF0000) >> 16);
+    kp[12] = (unsigned char)((key_buf[1] & 0xFF000000) >> 24);
+    kp[11] = (unsigned char)((key_buf[1] & 0xFF00000000) >> 32);
+    kp[10] = (unsigned char)((key_buf[1] & 0xFF0000000000) >> 40);
+    kp[9] = (unsigned char)((key_buf[1] & 0xFF000000000000) >> 48);
+    kp[8] = (unsigned char)((key_buf[1] & 0xFF00000000000000) >> 56);
     total_hashes++;
   }
 
