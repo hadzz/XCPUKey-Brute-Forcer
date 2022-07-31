@@ -22,24 +22,15 @@
  */
 
 #include <stdio.h>
-
 #include <stdlib.h>
-
 #include <stdint.h>
-
 #include <string.h>
-
 #include <pthread.h>
-
 #include <inttypes.h>
-
 #include <unistd.h>
-
 #include <sys/time.h>
-
-
+#include <stdbool.h>
 #include "crypto/enc/rc4.h"
-
 #include "crypto/hash/hmac-sha1.h"
 
 // Globals.
@@ -48,13 +39,57 @@ uint8_t *kvheader;
 uint8_t *hmac;
 
 int debug = 0, mine = 1;
-uint64_t total_hashes = 0;
+uint64_t total_keys = 0;
+uint64_t valid_keys = 0;
 
 typedef struct ModeOf {
   uint64_t Start;
   uint64_t Max;
   int ThreadNum;
 } mode_t;
+
+int verifyCPUKey (unsigned char* key) {
+  int i, j;
+  int hamming = 0;
+  for (i=0; i<13; i++) {
+    for (j=0; j<8; j++) {
+      unsigned char mask = 1 << j;
+      if ((key[i] & mask) != 0)
+        hamming++;
+    }
+  }
+  if ((key[13] & 1) == 1) hamming++;
+  if ((key[13] & 2) == 2) hamming++;
+  if (hamming != 53) return -1;
+  return 0;
+}
+
+void keyECD (unsigned char* key, unsigned char* ecd) {
+  int cnt;
+  for (cnt=0; cnt<16; cnt++)
+    ecd[cnt] = key[cnt];
+  
+  unsigned int acc1 = 0, acc2 = 0;
+  for (cnt=0; cnt< 0x80; cnt++, acc1 >>= 1) {
+    unsigned char bTmp = ecd[cnt >> 3];
+    unsigned int dwTmp = (unsigned int) ((bTmp >> (cnt & 7)) & 1);
+    if (cnt < 0x6A) {
+      acc1 = dwTmp ^ acc1;
+      if ((acc1 & 1) > 0)
+        acc1 = acc1 ^ 0x360325;
+      acc2 = dwTmp ^ acc2;
+    }
+    else if (cnt < 0x7F) {
+      if (dwTmp != (acc1 & 1))
+        ecd[(cnt >> 3)] = (unsigned char)((1 << (cnt & 7)) ^ (bTmp & 0xFF));
+      acc2 = (acc1 & 1) ^ acc2;
+    }
+    else if (dwTmp != acc2)
+      ecd[0xF] = (unsigned char)((0x80 ^ bTmp) & 0xFF);
+  }
+}
+
+
 
 /*
  * Brute Thread. old fashioned brute force the cpukey.
@@ -64,33 +99,22 @@ void *brute_thread(void *buf) {
   printf("#%d Thread Started (Starting Index: %" PRIu64 ", Max Index: %" PRIu64
          ", Mode: Increment)...\n",
          tm->ThreadNum, tm->Start, tm->Max);
-
-  uint64_t key_buf[2] = {tm->Start, 0};
+  
+  // testing key: DF AC 65 E8 B2 52 4E B8 4A 6B 7D 20 70 35 06 0C
+  // serial: 057469473207
   //unsigned char key[16] = { 0xDF, 0xAC, 0x65, 0xE8, 0xB2,
    //0x52, 0x4E, 0xB8, 0x4A, 0x6B, 0x7D, 0x20, 0x70, 0x35,
    //0x06, 0x0C }, * kp = key;
+  // full cpu key used to decrypt kv
   unsigned char key[16], *kp = key;
+  // lower part of key itterated with each hamming code
+  unsigned int keyLSB = 0;
   unsigned char *hmac_buf;
   unsigned char *hmac_key = malloc(16);
-
-
-  kp[7] = (unsigned char)((key_buf[0] & 0xFF));
-  kp[6] = (unsigned char)((key_buf[0] & 0xFF00) >> 8);
-  kp[5] = (unsigned char)((key_buf[0] & 0xFF0000) >> 16);
-  kp[4] = (unsigned char)((key_buf[0] & 0xFF000000) >> 24);
-  kp[3] = (unsigned char)((key_buf[0] & 0xFF00000000) >> 32);
-  kp[2] = (unsigned char)((key_buf[0] & 0xFF0000000000) >> 40);
-  kp[1] = (unsigned char)((key_buf[0] & 0xFF000000000000) >> 48);
-  kp[0] = (unsigned char)((key_buf[0] & 0xFF00000000000000) >> 56);
-  kp[15] = (unsigned char)((key_buf[1] & 0xFF));
-  kp[14] = (unsigned char)((key_buf[1] & 0xFF00) >> 8);
-  kp[13] = (unsigned char)((key_buf[1] & 0xFF0000) >> 16);
-  kp[12] = (unsigned char)((key_buf[1] & 0xFF000000) >> 24);
-  kp[11] = (unsigned char)((key_buf[1] & 0xFF00000000) >> 32);
-  kp[10] = (unsigned char)((key_buf[1] & 0xFF0000000000) >> 40);
-  kp[9] = (unsigned char)((key_buf[1] & 0xFF000000000000) >> 48);
-  kp[8] = (unsigned char)((key_buf[1] & 0xFF00000000000000) >> 56);
-
+  unsigned char *ecd = malloc(16);
+  char *hamming = (char*)malloc(106 * sizeof(char));
+  int i,j;
+  
   // Init crypto support.
   rc4_state_t *rc4 = malloc(sizeof(rc4_state_t));
   // Outputs.
@@ -106,37 +130,68 @@ void *brute_thread(void *buf) {
     hmac_buf[kn] = (unsigned char)hmac[kn];
     kn++;
   }
+  
+  // Init hamming code
+  for (i=0; i<53; i++)
+    hamming[i] = 0;
+  for (i=53; i<106; i++)
+    hamming[i] = 1;
+  
+  bool done = false;
+  while (!done) {
+    done = true;
+    
+    for (i=0; i<13; i++)
+      kp[i] = 0;
+    for (i=0; i<104; i++)
+      kp[i/8] |= ((hamming[i])<< (7-(i%8)));
+    kp[13] = (unsigned char)(((keyLSB & 0xFF0000) >> 14)) ;
+    if (hamming[104] == 1) kp[13] += 1;
+    if (hamming[105] == 1) kp[13] += 2;
+    kp[14] = (unsigned char)((keyLSB & 0xFF00) >> 8);
+    kp[15] = (unsigned char)(keyLSB & 0xFF);
+    
+    while (mine > 0) {  
+      keyECD(kp, ecd);
+      if (memcmp(ecd, kp, 16) != 0) {
+        if (keyLSB == 0x3FFFFF) {
+            keyLSB=0;
+            break;
+          }
+          keyLSB++;
+          kp[13] = (unsigned char)(((keyLSB & 0xFF0000) >> 14) | (kp[13] & 0x3));
+          kp[14] = (unsigned char)((keyLSB & 0xFF00) >> 8);
+          kp[15] = (unsigned char)(keyLSB & 0xFF);
+          total_keys++;
+          continue;
+      }
+      
+      if (valid_keys % 20 == 0){
+        printf("Thread %d Current Key: ", tm->ThreadNum);
+        kn = 0;
+        while (kn < 16) {
+          printf("%02X", kp[kn]);
+          kn++;
+        }
+        printf("\n");
+      }
 
-  while (mine > 0) {
-    //////////////
-    // remove this later
-    if (kp[15] == 0 &&  kp[14] == 0 &&  kp[13] == 0) {
-      printf("Thread %d curr key: ", tm->ThreadNum);
+      // Generate Hmac Key for decryption.
+      hmac_sha1(hmac_key, kp, 128, hmac_buf, 128);
+
+      // Convert Hmac to uint8_t.
       kn = 0;
       while (kn < 16) {
-        printf("%02X", kp[kn]);
+        buf2[kn] = (uint8_t)hmac_key[kn];
         kn++;
       }
-      printf("\n");
-    }
-    //////////////
 
-    // Generate Hmac Key for decryption.
-    hmac_sha1(hmac_key, kp, 128, hmac_buf, 128);
-
-    // Convert Hmac to uint8_t.
-    kn = 0;
-    while (kn < 16) {
-      buf2[kn] = (uint8_t)hmac_key[kn];
-      kn++;
-    }
-
-    // Decrypt kv_header and compare to know serial number.
-    rc4_init(rc4, buf2, 16);
-    rc4_crypt(rc4, kvheader, &buf4, 172);
-
-    // Compare The serial number.
-    if (buf4[171] == (uint8_t)serial_num[11] &&
+      // Decrypt kv_header and compare to know serial number.
+      rc4_init(rc4, buf2, 16);
+      rc4_crypt(rc4, kvheader, &buf4, 172);
+            
+      // Compare The serial number.
+      if (buf4[171] == (uint8_t)serial_num[11] &&
         buf4[170] == (uint8_t)serial_num[10] &&
         buf4[169] == (uint8_t)serial_num[9] &&
         buf4[168] == (uint8_t)serial_num[8] &&
@@ -148,48 +203,55 @@ void *brute_thread(void *buf) {
         buf4[162] == (uint8_t)serial_num[2] &&
         buf4[161] == (uint8_t)serial_num[1] &&
         buf4[160] == (uint8_t)serial_num[0]) {
-      // Found CPU Key.
-      printf("Found Key : ");
-
-      kn = 0;
-      while (kn < 16) {
-        printf("%02X", kp[kn]);
-        kn++;
-      }
-      printf("\n");
-      mine = 0;
-      pthread_exit(NULL);
-    } else { // Get a new cpu key for next round.
-      if (key_buf[0] == tm->Max) {
-        if (key_buf[1] == UINT64_MAX) {
-          mine = 0;
-          printf(
-              "Mining Thread #%d is complete, no key found on this thread :(\n",
-              tm->ThreadNum);
-        } else {
-          key_buf[0]++;
+        printf("Found Key : ");
+        kn = 0;
+        while (kn < 16) {
+          printf("%02X", kp[kn]);
+          kn++;
         }
-      } else {
-        key_buf[1]++;
+        printf("\n");
+        mine = 0;
+        done = true;
+        pthread_exit(NULL);
+      } 
+      else { // Get a new cpu key for next round.
+        // check it lower bits roll over
+        if (keyLSB == 0x3FFFFF) {
+          keyLSB=0;
+          // go to next hamming code
+          break;          
+        }
+        keyLSB++;
+        kp[13] = (unsigned char)(((keyLSB & 0xFF0000) >> 14) | (kp[13] & 0x3));
+        kp[14] = (unsigned char)((keyLSB & 0xFF00) >> 8);
+        kp[15] = (unsigned char)(keyLSB & 0xFF);
+        valid_keys++;
       }
-      kp[7] = (unsigned char)((key_buf[0] & 0xFF));
-      kp[6] = (unsigned char)((key_buf[0] & 0xFF00) >> 8);
-      kp[5] = (unsigned char)((key_buf[0] & 0xFF0000) >> 16);
-      kp[4] = (unsigned char)((key_buf[0] & 0xFF000000) >> 24);
-      kp[3] = (unsigned char)((key_buf[0] & 0xFF00000000) >> 32);
-      kp[2] = (unsigned char)((key_buf[0] & 0xFF0000000000) >> 40);
-      kp[1] = (unsigned char)((key_buf[0] & 0xFF000000000000) >> 48);
-      kp[0] = (unsigned char)((key_buf[0] & 0xFF00000000000000) >> 56);
-      kp[15] = (unsigned char)((key_buf[1] & 0xFF));
-      kp[14] = (unsigned char)((key_buf[1] & 0xFF00) >> 8);
-      kp[13] = (unsigned char)((key_buf[1] & 0xFF0000) >> 16);
-      kp[12] = (unsigned char)((key_buf[1] & 0xFF000000) >> 24);
-      kp[11] = (unsigned char)((key_buf[1] & 0xFF00000000) >> 32);
-      kp[10] = (unsigned char)((key_buf[1] & 0xFF0000000000) >> 40);
-      kp[9] = (unsigned char)((key_buf[1] & 0xFF000000000000) >> 48);
-      kp[8] = (unsigned char)((key_buf[1] & 0xFF00000000000000) >> 56);
     }
-    total_hashes++;
+    // get the next valid hamming code
+    for (i=105; i>0; i--) {
+      // from right to left: look for first one with 
+      // a zero on its left
+      if (hamming[i] == 1 && hamming[i-1] == 0) {
+        done = false;
+        // swap
+        hamming[i] = 0;
+        hamming[i-1] = 1;
+        // shift all one bits from i to length all 
+        // the way to the right
+        int oneBits = 0;
+        int zeroBits = 0;
+        for (j=i+1; j<106; j++) {
+          if (hamming[j] == 1) oneBits++;
+          else zeroBits++;
+        }
+        for (j=i+1; j<i+1+zeroBits; j++)
+          hamming[j] = 0;
+        for (j=i+1+zeroBits; j<106; j++)
+          hamming[j] = 1;
+        break;
+      }
+    }
   }
 
   pthread_exit(NULL);
@@ -221,7 +283,7 @@ int count_processors(void) {
  */
 void usage() {
   printf(
-      "XCPUKey-Brute-Forcer - 0.1c Beta by Hect0r\n"
+      "XCPUKey-Brute-Forcer - by Hect0r, fork by Hadzz\n"
       "Usage : cpu-gen [!keyvault_location] [!serial_number] [thread_count]\n"
       " NOTE : Each argument with a ! in it, needs to be set, without ! is "
       "optional.\n"
@@ -242,31 +304,6 @@ void usage() {
 uint64_t uchar_to_uint64(unsigned char *input, int start, bool reverse)
 */
 int main(int argc, char **argv) {
-
-  /*
-  // testing new HMAC library
-
-  unsigned char * hmac_key;
-  unsigned char key[16] = { 0xDF, 0xAC, 0x65, 0xE8, 0xB2,
-  0x52, 0x4E, 0xB8, 0x4A, 0x6B, 0x7D, 0x20, 0x70, 0x35,
-  0x06, 0x0C }, * kp = key;
-
-  //DFAC65E8B2524EB84A6B7D207035060C
-  unsigned char hmac[16] = { 0x5A, 0xD4, 0xEC, 0x90,
-  0x8C, 0xE1, 0x1C, 0xBA, 0x68, 0x50, 0x02, 0xB1,
-  0xC3, 0xE4, 0x59, 0xD8 }, * hmac_buf = hmac;
-
-  hmac_key = HMAC_SHA1((unsigned char * ) kp, (unsigned char * ) hmac_buf);
-
-  printf("HMACK_KEY: ");
-  int i;
-  for (i = 0; i<16; i++)
-    printf("%02X", hmac_key[i]);
-  printf("\n");
-
-  return 0;
-  */
-
   int nthreads = 0, t = 0, rc = 0;
 
   if (argc < 2) {
@@ -274,7 +311,7 @@ int main(int argc, char **argv) {
     return EXIT_SUCCESS;
   }
 
-  printf("XCPUKey-Brute-Forcer - 0.1e Beta by Hect0r\n");
+  printf("XCPUKey-Brute-Forcer - by Hect0r, fork by Hadzz\n");
 
   FILE *kv = fopen(argv[1], "r");
   if (!kv) {
@@ -305,7 +342,6 @@ int main(int argc, char **argv) {
   }
   if (debug == 1) {
     printf("KV Header : ");
-
     t = 0;
     while (t < 16368) {
       printf("%02X", kvheader[t]);
@@ -334,14 +370,19 @@ int main(int argc, char **argv) {
     fprintf(stderr, "Please provide your consoles serial number !");
     return 1;
   }
+  
+  /*
   if (argc >= 4) {
     nthreads = atoi(argv[3]);
 
     if (nthreads < 0 || nthreads == 0 || nthreads > 16) {
       nthreads = count_processors();
     }
-  }
-
+  }*/
+  
+  // threads limited to 1 until new code is finished
+  nthreads = 1;
+  
   if (debug == 1) {
     printf("KV Location %s\n"
            "Num Threads is %d\n",
@@ -371,11 +412,11 @@ int main(int argc, char **argv) {
 
   int hashes = 0, start = 0;
   while (mine == 1) {
-    start = total_hashes;
+    start = total_keys;
     sleep(1);
-    hashes = total_hashes - start;
+    hashes = total_keys - start;
     if ((tv_now.tv_sec - last_upd.tv_sec) >= 5) {
-      printf("[ HPS : %d h/ps - Total : %" PRIu64 " ]\n", hashes, total_hashes);
+      printf("[ KPS : %d k/ps - Total : %" PRIu64 " - Valid Keys : %" PRIu64 " ]\n", hashes, total_keys, valid_keys);
       gettimeofday(&last_upd, NULL);
     }
 
