@@ -48,7 +48,7 @@ typedef struct ModeOf {
   int ThreadNum;
 } mode_t;
 
-int verifyCPUKey (unsigned char* key) {
+int verifyCPUKey(unsigned char* key) {
   int i, j;
   int hamming = 0;
   for (i=0; i<13; i++) {
@@ -64,7 +64,7 @@ int verifyCPUKey (unsigned char* key) {
   return 0;
 }
 
-void keyECD (unsigned char* key, unsigned char* ecd) {
+void keyECD(unsigned char* key, unsigned char* ecd) {
   int cnt;
   for (cnt=0; cnt<16; cnt++)
     ecd[cnt] = key[cnt];
@@ -99,21 +99,23 @@ void *brute_thread(void *buf) {
   printf("#%d Thread Started (Starting Index: %" PRIu64 ", Max Index: %" PRIu64
          ", Mode: Increment)...\n",
          tm->ThreadNum, tm->Start, tm->Max);
-  
   // testing key: DF AC 65 E8 B2 52 4E B8 4A 6B 7D 20 70 35 06 0C
   // serial: 057469473207
   //unsigned char key[16] = { 0xDF, 0xAC, 0x65, 0xE8, 0xB2,
    //0x52, 0x4E, 0xB8, 0x4A, 0x6B, 0x7D, 0x20, 0x70, 0x35,
-   //0x06, 0x0C }, * kp = key;
+   //0x06, 0x0C };
   // full cpu key used to decrypt kv
-  unsigned char key[16], *kp = key;
-  // lower part of key itterated with each hamming code
-  unsigned int keyLSB = 0;
-  unsigned char *hmac_buf;
-  unsigned char *hmac_key = malloc(16);
-  unsigned char *ecd = malloc(16);
+  unsigned char key[16];
+  unsigned char *kp = key;
+  // right part of key itterated normally (22 bits actually used)
+  // bits (2^22)-(2^17) & (2^15)-(2^0)
+  unsigned int keyRight = 0;
+  // left part of key (hamming weight 53) 
+  // bits (2^127)-(2^23) & (2^17)-(2^16)
   char *hamming = (char*)malloc(106 * sizeof(char));
-  int i,j;
+  unsigned char *ecd = malloc(16);
+  unsigned char *hmac_buf = malloc(16);
+  unsigned char *hmac_key = malloc(16);
   
   // Init crypto support.
   rc4_state_t *rc4 = malloc(sizeof(rc4_state_t));
@@ -121,10 +123,8 @@ void *brute_thread(void *buf) {
   uint8_t buf2[20];
   uint8_t *buf4 = malloc(172);
 
-  int kn = 0;
-
+  int kn = 0, i,j;
   // Copy hmac.
-  hmac_buf = malloc(16);
   kn = 0;
   while (kn < 16) {
     hmac_buf[kn] = (unsigned char)hmac[kn];
@@ -138,30 +138,35 @@ void *brute_thread(void *buf) {
     hamming[i] = 1;
   
   bool done = false;
-  while (!done) {
-    done = true;
+  while (!done && mine > 0) {
     
+    // set key's upper 13 bytes to 0
     for (i=0; i<13; i++)
       kp[i] = 0;
-    for (i=0; i<104; i++)
+    // copy / convert bit array (hamming bits) into
+    // keys upper 13 bytes
+    for (i=0; i<104; i++) {
       kp[i/8] |= ((hamming[i])<< (7-(i%8)));
-    kp[13] = (unsigned char)(((keyLSB & 0xFF0000) >> 14)) ;
+    }
+    // 13th byte has 2 hamming bits, mask 0x03
     if (hamming[104] == 1) kp[13] += 1;
     if (hamming[105] == 1) kp[13] += 2;
-    kp[14] = (unsigned char)((keyLSB & 0xFF00) >> 8);
-    kp[15] = (unsigned char)(keyLSB & 0xFF);
+    // other upper 6 bits come from keyRight
+    kp[13] = (unsigned char)(((keyRight & 0xFF0000) >> 14)) ;
+    kp[14] = (unsigned char)((keyRight & 0xFF00) >> 8);
+    kp[15] = (unsigned char)(keyRight & 0xFF);
     
     while (mine > 0) {  
       keyECD(kp, ecd);
       if (memcmp(ecd, kp, 16) != 0) {
-        if (keyLSB == 0x3FFFFF) {
-            keyLSB=0;
+        if (keyRight == 0x3FFFFF) {
+            keyRight=0;
             break;
           }
-          keyLSB++;
-          kp[13] = (unsigned char)(((keyLSB & 0xFF0000) >> 14) | (kp[13] & 0x3));
-          kp[14] = (unsigned char)((keyLSB & 0xFF00) >> 8);
-          kp[15] = (unsigned char)(keyLSB & 0xFF);
+          keyRight++;
+          kp[13] = (unsigned char)(((keyRight & 0xFF0000) >> 14) | (kp[13] & 0x3));
+          kp[14] = (unsigned char)((keyRight & 0xFF00) >> 8);
+          kp[15] = (unsigned char)(keyRight & 0xFF);
           total_keys++;
           continue;
       }
@@ -212,28 +217,28 @@ void *brute_thread(void *buf) {
         printf("\n");
         mine = 0;
         done = true;
-        pthread_exit(NULL);
+        break;
       } 
       else { // Get a new cpu key for next round.
         // check it lower bits roll over
-        if (keyLSB == 0x3FFFFF) {
-          keyLSB=0;
+        if (keyRight == 0x3FFFFF) {
+          keyRight=0;
           // go to next hamming code
           break;          
         }
-        keyLSB++;
-        kp[13] = (unsigned char)(((keyLSB & 0xFF0000) >> 14) | (kp[13] & 0x3));
-        kp[14] = (unsigned char)((keyLSB & 0xFF00) >> 8);
-        kp[15] = (unsigned char)(keyLSB & 0xFF);
+        keyRight++;
+        kp[13] = (unsigned char)(((keyRight & 0xFF0000) >> 14) | (kp[13] & 0x3));
+        kp[14] = (unsigned char)((keyRight & 0xFF00) >> 8);
+        kp[15] = (unsigned char)(keyRight & 0xFF);
         valid_keys++;
       }
     }
-    // get the next valid hamming code
+    if (done) break;
+    // get the next valid bit permutation with weight 53
     for (i=105; i>0; i--) {
       // from right to left: look for first one with 
       // a zero on its left
       if (hamming[i] == 1 && hamming[i-1] == 0) {
-        done = false;
         // swap
         hamming[i] = 0;
         hamming[i-1] = 1;
@@ -251,9 +256,17 @@ void *brute_thread(void *buf) {
           hamming[j] = 1;
         break;
       }
+      // if no more one bits have a zero to the left, we are done
+      else if (i == 1)
+        done = true;
     }
   }
-
+  free(hamming);
+  free(ecd);
+  free(hmac_buf);
+  free(hmac_key);
+  free(rc4);
+  free(buf4);
   pthread_exit(NULL);
 }
 
@@ -422,6 +435,11 @@ int main(int argc, char **argv) {
 
     gettimeofday(&tv_now, NULL);
   }
-  pthread_exit(NULL);
+  for (t = 0; t < nthreads; t++) {
+    pthread_join(threads[t], NULL);
+  }
+  free(hmac);
+  free(kvheader);
+  free(serial_num);
   return (EXIT_SUCCESS);
 }
