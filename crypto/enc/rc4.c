@@ -5,9 +5,9 @@
  */
 void rc4_init(rc4_state_t* state, const uint8_t *key, int keylen)
 {
+    state->i = 0;
+    state->j = 0;
     if(state->x == 0) {
-        state->i = 0;
-        state->j = 0;
         state->s_box_len = 0x100;
         state->sbox = malloc(0x100);
         state->x = 1;
